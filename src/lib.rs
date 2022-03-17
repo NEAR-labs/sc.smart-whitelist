@@ -7,14 +7,19 @@ use near_sdk::{
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct SmartWhitelistContract {
+  /// Whitelist administrator public key.
   pub admin_pk: PublicKey,
+  /// Service accounts.
   pub service_accounts: LookupSet<AccountId>,
+  /// Applicant public keys for whitelisting.
   pub applicants: LookupMap<AccountId, PublicKey>,
+  /// Whitelisted account IDs that completed KYC verification.
   pub whitelist: LookupSet<AccountId>,
 }
 
 #[near_bindgen]
 impl SmartWhitelistContract {
+  /// Initializes the contract with the specified public key of the whitelist administrator.
   #[init]
   pub fn new(admin_pk: PublicKey) -> Self {
     Self {
@@ -25,20 +30,46 @@ impl SmartWhitelistContract {
     }
   }
 
+  /**
+    Getters
+  **/
+
+  /// Returns 'true' if the given identifier is a service identifier.
+  pub fn is_service_account_whitelisted(&self, service_account_id: AccountId) -> bool {
+    self.service_accounts.contains(&service_account_id)
+  }
+
+  /// Returns the public key for the applicant's account
+  pub fn get_applicant_pk(&self, applicant_account_id: AccountId) -> Option<PublicKey> {
+    self.applicants.get(&applicant_account_id)
+  }
+
+  /// Returns 'true' if the given account ID is whitelisted.
+  pub fn is_whitelisted(&self, account_id: AccountId) -> bool {
+    self.whitelist.contains(&account_id)
+  }
+
+  /**
+    Administrator
+  **/
+
+  /// Adds the given service account ID.
   pub fn add_service_account(&mut self, service_account_id: AccountId) -> bool {
     self.assert_called_by_admin();
     self.service_accounts.insert(&service_account_id)
   }
 
+  /// Removes the given service account ID.
   pub fn remove_service_account(&mut self, service_account_id: AccountId) -> bool {
     self.assert_called_by_admin();
     self.service_accounts.remove(&service_account_id)
   }
 
-  pub fn is_service_account_whitelisted(&self, service_account_id: AccountId) -> bool {
-    self.service_accounts.contains(&service_account_id)
-  }
+  /**
+    Applicant
+  **/
 
+  /// Storing the public key of the applicant's account ID.
   pub fn register_applicant(&mut self) -> Option<PublicKey> {
     let applicant_account_id = env::signer_account_id();
     if self.applicants.contains_key(&applicant_account_id) {
@@ -50,29 +81,33 @@ impl SmartWhitelistContract {
     self.applicants.insert(&applicant_account_id, &env::signer_account_pk())
   }
 
+  /// Removes applicant account ID information.
   pub fn remove_applicant(&mut self) -> Option<PublicKey> {
     self.internal_remove_applicant(env::signer_account_id())
   }
 
-  pub fn get_applicant_pk(&self, applicant_account_id: AccountId) -> Option<PublicKey> {
-    self.applicants.get(&applicant_account_id)
-  }
+  /**
+    Service
+  **/
 
+  /// Adds a verified account ID to the whitelist.
   pub fn add_account(&mut self, account_id: AccountId) -> bool {
     self.assert_called_by_service();
     self.internal_remove_applicant(account_id.clone());
     self.whitelist.insert(&account_id)
   }
 
+  /// Removes the given account ID from the whitelist.
   pub fn remove_account(&mut self, account_id: AccountId) -> bool {
     self.assert_called_by_service();
     self.whitelist.remove(&account_id)
   }
 
-  pub fn is_whitelisted(&self, account_id: AccountId) -> bool {
-    self.whitelist.contains(&account_id)
-  }
+  /**
+    Internal
+  **/
 
+  /// An internal method for deleting the public key of the applicant's account.
   fn internal_remove_applicant(&mut self, applicant_account_id: AccountId) -> Option<PublicKey> {
     if !self.applicants.contains_key(&applicant_account_id) {
       env::panic_str("Unknown applicant");
@@ -80,6 +115,7 @@ impl SmartWhitelistContract {
     self.applicants.remove(&applicant_account_id)
   }
 
+  /// Internal method to verify the signer was the whitelist administrator account ID.
   fn assert_called_by_admin(&self) {
     assert_eq!(
       &env::signer_account_pk(),
@@ -88,6 +124,7 @@ impl SmartWhitelistContract {
     );
   }
 
+  /// Internal method to verify the predecessor was the service account ID.
   fn assert_called_by_service(&self) {
     if !self.is_service_account_whitelisted(env::predecessor_account_id()) {
       env::panic_str("Can only be called by whitelist service account");
